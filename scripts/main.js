@@ -129,9 +129,10 @@ function crawlAndOwn(maxDepth, ns) {
  * @param {import(".").NS } ns
  */
 async function updateServersToHackTxt(maxDepth, ns) {
+    const purchasedServers = ns.getPurchasedServers();
     const hackableServers = findServers("home", maxDepth, ns, {
         hasRootAccess: true, nameFilter: (server) => {
-            return server !== "home" && !server.startsWith("home-")
+            return server !== "home" && purchasedServers.indexOf(server) === -1;
         }
     }).join("\n");
     await ns.write("servers-to-hack.txt", hackableServers, "w")
@@ -206,6 +207,6 @@ export async function main(ns) {
         await updateServersToHackTxt(3, ns);
         await manageWorkers(3, ns, flags.restartWorkers)
         flags.restartWorkers = false;
-        await ns.asleep(30000);
+        await ns.asleep(10000);
     }
 }

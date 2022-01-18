@@ -4,14 +4,22 @@ async function workServer(server, ns) {
 	const hackChance = ns.hackAnalyzeChance(server);
 	if (hackChance < .2) {
 		ns.print(`Hack chance on ${server} too low (${hackChance}), weakening.`);
-		return ns.weaken(server);
+		const weakened = ns.weaken(server);
+		ns.toast(`Weakened ${server} by ${weakened}`, "info");
 	} else {
 		const potentialEarned = ns.hackAnalyze(server);
 		if (!potentialEarned) {
 			ns.print(`No money to earn from hacking ${server}, growing.`);
-			await ns.grow(server);
+			const growth = await ns.grow(server);
+			ns.toast(`Grew ${server} by ${growth}`, "info");
 		} else {
-			await ns.hack(server);
+			const earnedMoney = await ns.hack(server);
+			if (earnedMoney > 0) {
+				const formattedEarnedMoney = ns.nFormat(earnedMoney, '($ 0.00 a)');
+				ns.toast(`Hacked ${formattedEarnedMoney} from ${server}`, "success");
+			} else {
+				ns.toast(`Failed hacking ${server}...`, "warning")
+			}
 		}
 	}
 }
