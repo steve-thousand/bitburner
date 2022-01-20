@@ -1,10 +1,11 @@
-const FLAG_SCHEMA = [
+import { NS } from "index";
+
+const FLAG_SCHEMA: [string, string | number | boolean | string[]][] = [
     ['noprompt', false],
     ['name', 'home']
 ]
 
-/** @param {import(".").NS } ns */
-export async function main(ns) {
+export async function main(ns: NS) {
     const flags = ns.flags(FLAG_SCHEMA);
     const ram = flags["_"][0];
     const cost = ns.getPurchasedServerCost(ram);

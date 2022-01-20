@@ -1,10 +1,11 @@
-function roundUpHundredth(num) {
+import { NS } from "index";
+
+function roundUpHundredth(num: number) {
     return Math.ceil(num * 100) / 100;
 }
 
-/** @param {import(".").NS } ns */
-export async function main(ns) {
-    const server = ns.args[0]
+export async function main(ns: NS) {
+    const server: string = <string>ns.args[0]
 
     const hackChance = ns.hackAnalyzeChance(server);
     const hackTime = ns.getHackTime(server);
