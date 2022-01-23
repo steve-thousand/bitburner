@@ -7,12 +7,24 @@ const FLAG_SCHEMA: [string, string | number | boolean | string[]][] = [
 
 export async function main(ns: NS) {
     const flags = ns.flags(FLAG_SCHEMA);
+
+    //delete existing scripts
+    const existingFiles = ns.ls("home", "scripts/")
+    for (var file of existingFiles) {
+        ns.tprint(`Deleting exiting file ${file} from home`);
+        ns.rm(file, "home");
+    }
+
     const files = [
         "scripts/buyserver.js",
         "scripts/hackanalyze.js",
         "scripts/main.js",
-        "scripts/utils.js",
-        "scripts/worker-hack.js"
+        "scripts/worker-grow.js",
+        "scripts/worker-hack.js",
+        "scripts/utils/bitburner-formulas.js",
+        "scripts/utils/format.js",
+        "scripts/utils/hack.js",
+        "scripts/utils/scan.js",
     ]
     for (var file of files) {
         const url = `http://${flags.host}:${flags.port}/${file}`;

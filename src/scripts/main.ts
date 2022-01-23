@@ -1,32 +1,15 @@
 import { NS } from "index";
-import { findServers, getServerStats } from "scripts/utils";
-
-/**
- * This script automatically takes control of new servers as they are determined to be ownable.
- */
-
-/** @param {import(".").NS } ns */
-function canFTP(host: string, ns: NS) {
-    return ns.fileExists("FTPCrack.exe", host)
-}
-
-/** @param {import(".").NS } ns */
-function canSSH(host: string, ns: NS) {
-    return ns.fileExists("BruteSSH.exe", host)
-}
+import { findServers, getServerStatsReport } from "scripts/utils/scan";
+import { canFTP, canSSH, decideToHack, HackDecision, HackType } from "scripts/utils/hack";
 
 /** 
  * Crawl to a depth for servers that we do not own but could own, and attempt to take control.
- * @param {import(".").NS } ns 
  */
 function crawlAndOwn(maxDepth: number, ns: NS) {
-    ns.print("Crawling for new servers to own...");
-
     const homeServer = "home";
 
     // find frontier servers we don't own
     const foundServers = findServers(homeServer, maxDepth, ns, { hasRootAccess: false });
-    ns.print(`Detected servers we do not yet own: [${foundServers}]`)
 
     var portsAbleToOpen = 0;
     if (canSSH(homeServer, ns)) {
@@ -42,20 +25,20 @@ function crawlAndOwn(maxDepth: number, ns: NS) {
         const requiredHackingLevel = ns.getServerRequiredHackingLevel(server);
         const currentHackingLevel = ns.getHackingLevel();
         if (requiredHackingLevel > currentHackingLevel) {
-            ns.print(`Hacking level ${currentHackingLevel} not high enough to own server ${server} (${requiredHackingLevel})`)
             continue;
         }
 
         const numberPortsRequired = ns.getServerNumPortsRequired(server);
 
         if (numberPortsRequired > portsAbleToOpen) {
-            ns.print(`Cannot open enough ports to own server ${server}`)
             continue;
         }
         ownableServers.push(server);
     }
 
-    ns.print(`Detected servers that are ownable: [${ownableServers}]`)
+    if (ownableServers.length > 0) {
+        ns.print(`Detected servers that are ownable: [${ownableServers}]`)
+    }
 
     for (var server of ownableServers) {
         ns.print(`Attempting to own server ${server}...`)
@@ -77,55 +60,59 @@ function crawlAndOwn(maxDepth: number, ns: NS) {
     }
 }
 
-async function directToHackServer(ns: NS, hackingServer: string, serverToHack: string) {
-    const processes = ns.ps(hackingServer);
-    if (processes.filter(process => process.filename === "/scripts/worker-hack.js").length > 0) {
-        ns.print(`Server ${hackingServer} already hacking, skipping.`);
-        return 0;
-    }
-
-    const ramForScript = ns.getScriptRam("/scripts/worker-hack.js");
-    const maxRam = ns.getServerMaxRam(hackingServer);
-    const threads = Math.floor(maxRam / ramForScript);
-    if (threads <= 0) {
-        return 0;
-    }
-
-    const copied = await ns.scp("/scripts/worker-hack.js", "home", hackingServer);
+async function runScriptOnServer(ns: NS, workingServer: string, targetServer: string, script: string, threadCount: number, id: string) {
+    const copied = await ns.scp(script, "home", workingServer);
     if (!copied) {
-        ns.print(`Failed to copy to server ${hackingServer}`)
+        ns.print(`Failed to copy ${script} to server ${workingServer}`)
         return;
     }
 
-    ns.print(`Directing ${hackingServer} to hack ${serverToHack} with ${threads} threads`);
-    ns.killall(hackingServer);
-    const pid = ns.exec("/scripts/worker-hack.js", hackingServer, threads, serverToHack)
+    const pid = ns.exec(script, workingServer, threadCount, targetServer, id)
     if (pid === 0) {
-        ns.print(`Failed to start script on server ${hackingServer}`)
+        ns.print(`Failed to start script ${script} on server ${workingServer}`)
         return;
     }
+    return pid;
+}
 
-    return threads;
+// https://stackoverflow.com/a/21963136/3529744
+function uuid() {
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
+        var r = Math.random() * 16 | 0, v = c == 'x' ? r : (r & 0x3 | 0x8);
+        return v.toString(16);
+    });
 }
 
 async function manageWorkers(ns: NS) {
     const servers = findServers("home", 5, ns, { hasRootAccess: true, nameFilter: name => name !== "home" });
-    const serverStats = await getServerStats(ns, servers);
-    const highestEarningServer = Object.values(serverStats).sort((a, b) => b.dollarsPerSecondPerThread - a.dollarsPerSecondPerThread)[0]
-    ns.print(`Picked highest earning server ${highestEarningServer.name} with estimated earnings of ${highestEarningServer.dollarsPerSecondPerThread} per second per thread`);
+    const serverStatsReport = await getServerStatsReport(ns, servers);
+    const hackDecisions: HackDecision[] = decideToHack(ns, serverStatsReport);
 
     var launchedThreads = 0;
-    var launchedServers = 0;
-    for (var server of servers) {
-        const threads = await directToHackServer(ns, server, highestEarningServer.name);
-        if (threads > 0) {
-            launchedThreads += threads;
-            launchedServers += 1;
+    for (var hackDecision of hackDecisions) {
+        const decisionId = uuid();
+        var threadCount = hackDecision.threadCount;
+        var threadsPerProcess = Math.floor(hackDecision.threadCount * hackDecision.chance);
+        if (threadsPerProcess == 0) {
+            threadsPerProcess = threadCount;
+        }
+        let count = 1;
+        //splitting up the processes when the hack chance decreases helps limit loss (i think?)
+        while (threadCount > 0) {
+            if (threadCount < threadsPerProcess) {
+                threadsPerProcess = threadCount;
+            }
+            const pid = await runScriptOnServer(ns, hackDecision.workerServer, hackDecision.targetServer, hackDecision.type, threadsPerProcess, decisionId + "_" + count)
+            threadCount -= threadsPerProcess;
+            if (pid > 0) {
+                launchedThreads += threadsPerProcess;
+            }
+            count++;
         }
     }
 
     if (launchedThreads > 0) {
-        ns.toast(`Launched ${launchedThreads} threads across ${launchedServers} servers...`, "info")
+        ns.toast(`Launched ${launchedThreads} threads...`, "info")
     }
 }
 
@@ -142,6 +129,6 @@ export async function main(ns: NS) {
         crawlAndOwn(5, ns);
         await manageWorkers(ns)
         flags.restartWorkers = false;
-        await ns.asleep(10000);
+        await ns.asleep(5000);
     }
 }
