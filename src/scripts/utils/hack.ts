@@ -34,7 +34,7 @@ export type ServerResources = {
     availableRam: number
 }
 
-type Allocation = {
+export type Allocation = {
     type: HackType,
     scriptRam: number,
     threads: number,
@@ -74,7 +74,7 @@ export class ServerResourcesReport {
                 availableRam -= existingAllocation.scriptRam * existingAllocation.threads;
             }
             if (availableRam > scriptRam) {
-                const thisThreads = Math.floor(availableRam / scriptRam);
+                const thisThreads = Math.min(threads, Math.floor(availableRam / scriptRam));
                 this.allocations[server].push({
                     type: type,
                     scriptRam: scriptRam,
