@@ -92,7 +92,8 @@ async function manageWorkers(ns: NS) {
     for (var hackDecision of hackDecisions) {
         const decisionId = uuid();
         var threadCount = hackDecision.threadCount;
-        var threadsPerProcess = Math.floor(hackDecision.threadCount * hackDecision.chance);
+        var partitionFraction = 1 / (hackDecision.chance * hackDecision.chance)
+        var threadsPerProcess = Math.floor(hackDecision.threadCount / partitionFraction);
         if (threadsPerProcess == 0) {
             threadsPerProcess = threadCount;
         }
