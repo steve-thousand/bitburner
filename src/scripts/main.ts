@@ -1,6 +1,6 @@
 import { NS } from "index";
 import { findServers, getServerStatsReport } from "scripts/utils/scan";
-import { canFTP, canSSH, decideToHack, HackDecision, HackType } from "scripts/utils/hack";
+import { canFTP, canSMTP, canSSH, decideToHack, HackDecision } from "scripts/utils/hack";
 
 /** 
  * Crawl to a depth for servers that we do not own but could own, and attempt to take control.
@@ -16,6 +16,9 @@ function crawlAndOwn(maxDepth: number, ns: NS) {
         portsAbleToOpen += 1
     }
     if (canFTP(homeServer, ns)) {
+        portsAbleToOpen += 1
+    }
+    if (canSMTP(homeServer, ns)) {
         portsAbleToOpen += 1
     }
 
@@ -49,6 +52,9 @@ function crawlAndOwn(maxDepth: number, ns: NS) {
             if (canFTP(homeServer, ns)) {
                 ns.ftpcrack(server);
             }
+            if (canSMTP(homeServer, ns)) {
+                ns.relaysmtp(server);
+            }
             ns.nuke(server);
             ns.print(`Successfully owned server ${server}`)
             ns.tprint(`Successfully owned server ${server}`)
@@ -60,17 +66,17 @@ function crawlAndOwn(maxDepth: number, ns: NS) {
     }
 }
 
-async function runScriptOnServer(ns: NS, workingServer: string, targetServer: string, script: string, threadCount: number, id: string) {
+async function runScriptOnServer(ns: NS, workingServer: string, targetServer: string, script: string, threadCount: number, id: string): Promise<number> {
     const copied = await ns.scp(script, "home", workingServer);
     if (!copied) {
         ns.print(`Failed to copy ${script} to server ${workingServer}`)
-        return;
+        return 0;
     }
 
     const pid = ns.exec(script, workingServer, threadCount, targetServer, id)
     if (pid === 0) {
         ns.print(`Failed to start script ${script} on server ${workingServer}`)
-        return;
+        return 0;
     }
     return pid;
 }

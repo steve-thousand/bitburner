@@ -13,7 +13,10 @@ export function findServers(host: string, maxDepth: number, ns: NS, options: Sca
     const found = [host]
     const frontier: [[string, number]] = [[host, 0]]
     while (frontier.length > 0) {
-        const frontier_current = frontier.pop();
+        const frontier_current: [string, number] | undefined = frontier.pop();
+        if (frontier_current === undefined) {
+            break;
+        }
         if (frontier_current[1] <= maxDepth) {
             const adjacent = scanAdjacent(frontier_current[0], ns);
             for (var server of adjacent) {

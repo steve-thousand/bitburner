@@ -1,0 +1,10 @@
+{
+    "extends": "./tsconfig.json",
+    "compilerOptions": {
+        "module": "ES6",
+        "rootDir": "src"
+    },
+    "exclude": [
+        "test/**/*.test.ts"
+    ]
+}

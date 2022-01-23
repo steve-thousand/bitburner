@@ -1,5 +1,5 @@
 import { NS } from "index";
-import { ServerStatsReport } from "scripts/utils/scan";
+import { ServerStatsReport, ServerStats } from "scripts/utils/scan";
 import { Server, ServerFortifyAmount } from "scripts/utils/bitburner-formulas"
 import { formatDollars } from "scripts/utils/format"
 
@@ -9,6 +9,10 @@ export function canFTP(host: string, ns: NS) {
 
 export function canSSH(host: string, ns: NS) {
     return ns.fileExists("BruteSSH.exe", host)
+}
+
+export function canSMTP(host: string, ns: NS) {
+    return ns.fileExists("relaySMTP.exe", host)
 }
 
 export enum HackType {
@@ -25,7 +29,7 @@ export type HackDecision = {
     chance: number
 }
 
-type ServerResources = {
+export type ServerResources = {
     name: string
     availableRam: number
 }
@@ -38,7 +42,7 @@ type Allocation = {
     chance: number
 }
 
-class ServerResourcesReport {
+export class ServerResourcesReport {
     serverResources: ServerResources[]
     allocations: { [key: string]: Allocation[] }
     constructor(serverResources: ServerResources[]) {
@@ -130,8 +134,8 @@ function getServerResources(ns: NS, servers: string[]): ServerResourcesReport {
  * much that growth takes too long, or we may completely drain a server and it may never grow again.)
  */
 export function decideToHack(ns: NS, servers: ServerStatsReport): HackDecision[] {
-    const serverResources = getServerResources(ns, Object.keys(servers));
-    const serversByHackRate = Object.values(servers).sort((a, b) => {
+    const serverResources: ServerResourcesReport = getServerResources(ns, Object.keys(servers));
+    const serversByHackRate: ServerStats[] = Object.values(servers).sort((a: ServerStats, b: ServerStats) => {
         return b.rateDollarsHackedPerThread - a.rateDollarsHackedPerThread
     });
 
