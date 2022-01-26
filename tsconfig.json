@@ -4,6 +4,7 @@
         "target": "ESNext",
         "moduleResolution": "node",
         "noImplicitAny": true,
+        "esModuleInterop": true,
         "preserveConstEnums": true,
         "outDir": "out",
         "lib": [
@@ -11,15 +12,7 @@
             "dom"
         ],
         "rootDir": ".",
-        "baseUrl": "./src",
-        "paths": {
-            "@/*": [
-                "src/*"
-            ],
-            "@src/*": [
-                "src/*"
-            ]
-        }
+        "baseUrl": "./src"
     },
     "include": [
         "src/**/*.ts",

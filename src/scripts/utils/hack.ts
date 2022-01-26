@@ -1,5 +1,6 @@
-import { NS } from "index";
+import { NS, Player } from "index";
 import { ServerStatsReport, ServerStats } from "scripts/utils/scan";
+export { ServerStats };
 import { Server, ServerFortifyAmount } from "scripts/utils/bitburner-formulas"
 import { formatDollars } from "scripts/utils/format"
 
@@ -119,78 +120,153 @@ function getServerResources(ns: NS, servers: string[]): ServerResourcesReport {
     }));
 }
 
-/**
- * I would like this function to TELL ME WHAT TO DO.
- * 
- * Top priority is always: maximize potential $ over time. So, we should compare the following:
- * 1. The max potential $/s to hack right now
- * 2. The potential $/s we would have if instead we were to grow a server and then hack
- * 3. The potential $/s we would have if instead we were to weaken a server and then hack.
- * 
- * Once all of these are compared, we pick the highest.
- * 
- * Of course, the logic here will eventually need to account for the fact that the even though hacking a server right now
- * is profitable, it may not be a good idea to hit it with everything we've got (we could reduce the amount of money to
- * much that growth takes too long, or we may completely drain a server and it may never grow again.)
- */
-export function decideToHack(ns: NS, servers: ServerStatsReport): HackDecision[] {
-    const serverResources: ServerResourcesReport = getServerResources(ns, Object.keys(servers));
-    const serversByHackRate: ServerStats[] = Object.values(servers).sort((a: ServerStats, b: ServerStats) => {
-        return b.rateDollarsHackedPerThread - a.rateDollarsHackedPerThread
-    });
+type BestServerOption = {
+    server: string,
+    hackType: HackType,
+    dollarRate: number,
+    minRequiredThreads: number,
+    maxPossibleThreads: number
+}
 
-    //prioritize hacking
-    const HACK_RAM = ns.getScriptRam(HackType.HACK);
-    var availableHackCapacity = serverResources.availableScriptCapacity(HACK_RAM);
-    for (var server of serversByHackRate) {
-        if (availableHackCapacity == 0) {
+/**
+ * For a given server, what is the best possible option we can do right now, if we can only do one: hack, grow, or weaken.
+ * Choice is based on a method for calculating $ earned over time.
+ * 
+ * TODO: big todo, the math here is dubious
+ */
+function determineBestOperationForServer(server: ServerStats, maxCapacities: { [key: string]: number }, player: Player): BestServerOption | null {
+    //what is immediate hack rate
+    var topAction, topRate, minRequiredThreads, maxPossibleThreads;
+    if (1 <= maxCapacities[HackType.HACK]) {
+        topAction = HackType.HACK;
+        //TODO do we want the chance in here?
+        topRate = (server.money.available * server.hack.percentStolenPerThread * Math.pow(server.hack.chance, 1)) / server.hack.timeMs;
+        minRequiredThreads = 1;
+        //max threads is the point at which we have hacked all the money
+        maxPossibleThreads = Math.floor(1 / server.hack.percentStolenPerThread);
+    }
+
+    //can we grow to a point that will yield more money over time?
+    //TODO this math might be wrong.
+    const growMoneyTippingPoint = server.money.available * (server.hack.timeMs + server.grow.timeMs) / server.hack.timeMs;
+    if (growMoneyTippingPoint < server.money.max) {
+        //we might be able grow!
+        const minRequiredGrowThreads = Math.ceil(growMoneyTippingPoint / (server.money.available * server.grow.rate));
+        //TODO this is wrong
+        var growHackRate = Math.min(server.money.available * 0.0002 * minRequiredGrowThreads, server.money.max) * server.hack.percentStolenPerThread * Math.pow(server.hack.chance, 1) / (server.grow.timeMs + server.hack.timeMs)
+        // var growHackRate = Math.min(server.money.available * server.grow.rate * minRequiredGrowThreads, server.money.max) * server.hack.percentStolenPerThread / (server.grow.timeMs + server.hack.timeMs)
+        if (!topRate || growHackRate > topRate) {
+            //yay! we can grow
+            topAction = HackType.GROW;
+            topRate = growHackRate
+            minRequiredThreads = minRequiredGrowThreads;
+            //max threads is the point at which we will have reached the max
+            maxPossibleThreads = Math.ceil(server.money.max / (server.money.available * 0.0002));
+            // maxPossibleThreads = Math.ceil(server.money.max / (server.money.available * server.grow.rate));
+        }
+    }
+
+    //can we weaken to a point that will yield more money over time?
+    var weakenThreads = 1;
+    //TODO constant time.
+    const maxWeakenCapacity = maxCapacities[HackType.WEAKEN]
+    while (weakenThreads <= maxWeakenCapacity) {
+        const newDifficultyLevel = server.security.level - (server.weaken.decreasePerThread * weakenThreads);
+        if (newDifficultyLevel < server.security.minLevel) {
+            //can't go any lower
             break;
         }
-        // if hack rate is greater than grow rate, hack until it won't be.
-        var threadsToDedicate = availableHackCapacity;
-        const minSecurityLevel = server.security.minLevel;
-        while (threadsToDedicate > 0) {
-            //will this result in less growth than hacking?
-            const moneyHacked = server.hack.percentStolenPerThread * threadsToDedicate * server.money.available;
-            const endingMoney = server.money.available - moneyHacked;
-            if (endingMoney > 0) {
-                //TODO: player will also change, right?
-                const newHackDifficulty = server.security.level * ServerFortifyAmount * threadsToDedicate;
-                const newPercentStolenPerThread = Server.calculatePercentMoneyHacked(newHackDifficulty, minSecurityLevel, ns.getPlayer());
-                const newHackTime = Server.calculateHackingTime(newHackDifficulty, minSecurityLevel, ns.getPlayer());
-
-                const endingHackRate = newPercentStolenPerThread * endingMoney / newHackTime;
-                const endingGrowthRate = server.grow.rate * endingMoney / (newHackTime * 3.2 /* growtime multiplier */);
-                if (endingHackRate < endingGrowthRate) {
-                    const toSteal = server.hack.percentStolenPerThread * threadsToDedicate * server.money.available;
-                    const toStealFormatted = formatDollars(ns, server.hack.percentStolenPerThread * threadsToDedicate * server.money.available);
-                    const available = formatDollars(ns, server.money.available)
-                    const dollarsPerSecondFormatted = formatDollars(ns, toSteal / (server.hack.timeMs / 1000));
-                    ns.print(`Hacking ${server.name} with ${threadsToDedicate} threads in ${Math.floor(server.hack.timeMs) / 1000}s (${toStealFormatted} of ${available} at ${Math.floor(server.hack.chance * 100)}% chance) = ${dollarsPerSecondFormatted} per second`);
-                    break;
-                }
-            }
-            threadsToDedicate--;
+        const newHackingChance = Server.calculateHackingChance(newDifficultyLevel, server.security.minLevel, player);
+        const newPercentStolenPerThread = Server.calculatePercentMoneyHacked(newDifficultyLevel, server.security.minLevel, player);
+        const newHackTime = Server.calculateHackingTime(newDifficultyLevel, server.security.minLevel, player);
+        const weakenedHackRate = (server.money.available * newPercentStolenPerThread * Math.pow(newHackingChance, 1)) / (newHackTime + server.weaken.timeMs);
+        if (!topRate || weakenedHackRate > topRate) {
+            //yay! we can weaken
+            topAction = HackType.WEAKEN;
+            topRate = weakenedHackRate;
+            minRequiredThreads = weakenThreads;
+            //max threads is the point at which we will have hit the min security level
+            maxPossibleThreads = Math.ceil((server.security.level - server.security.minLevel) / server.weaken.decreasePerThread)
+            break;
         }
-        if (threadsToDedicate > 0) {
-            serverResources.allocate(HackType.HACK, HACK_RAM, threadsToDedicate, server.name, server.hack.chance)
-        }
-        availableHackCapacity -= threadsToDedicate;
+        weakenThreads++;
     }
 
-    const GROW_RAM = ns.getScriptRam(HackType.GROW);
-    var availableGrowCapacity = serverResources.availableScriptCapacity(GROW_RAM);
-    if (availableGrowCapacity > 0) {
-        ns.print(`Detected ${availableGrowCapacity} threads available for grow.`)
+    if (topAction) {
+        return {
+            server: server.name,
+            hackType: topAction,
+            dollarRate: topRate,
+            minRequiredThreads: minRequiredThreads,
+            maxPossibleThreads: maxPossibleThreads
+        }
+    } else {
+        return null;
     }
-    //grow is second priority
-    // for (var server of serversByHackRate) {
+}
 
-    // }
+/**
+ * Overhacking a thread can cause growth problems later, so we can calculate here how much the hack and growth rates of
+ * the server would be after hacking with some number of threads. This function will return the max threads we should use
+ * before we end up overhacking.
+ * 
+ * TODO this might be broken as hell
+ */
+export function determineMaxThreadsToHackWith(server: ServerStats, availableCapacity: number): number {
+    var threadsToDedicate = availableCapacity;
+    while (threadsToDedicate > 0) {
+        //for now we just make sure you can't hack a server to death
+        const moneyHacked = server.hack.percentStolenPerThread * threadsToDedicate * server.money.available;
+        const endingMoney = server.money.available - moneyHacked;
+        if (endingMoney > 0) {
+            break;
+        }
+        threadsToDedicate--;
+    }
+    return threadsToDedicate;
+}
 
-    const hackDecisions: HackDecision[] = serverResources.decide();
-    // if (hackDecisions.length > 0) {
-    //     ns.print(`Decided to hack: ${JSON.stringify(hackDecisions)}`)
-    // }
-    return hackDecisions;
+export function determineMaxThreadsToGrowWith(server: ServerStats, availableCapacity: number): number {
+    var threadsToDedicate = availableCapacity;
+    while (threadsToDedicate > 0) {
+        //for now we just make sure you can't hack a server to death
+        const moneyGrown = server.grow.rate * threadsToDedicate * server.money.available;
+        if (moneyGrown < server.money.max) {
+            break;
+        }
+        threadsToDedicate--;
+    }
+    return threadsToDedicate;
+}
+
+export function decideToHack(ns: NS, serverStatsReport: ServerStatsReport): HackDecision[] {
+    const servers: ServerStats[] = Object.values(serverStatsReport);
+    const serverResources: ServerResourcesReport = getServerResources(ns, servers.map(server => server.name));
+    const availableCapacities: { [key: string]: number } = {};
+    availableCapacities[HackType.HACK] = serverResources.availableScriptCapacity(ns.getScriptRam(HackType.HACK));
+    availableCapacities[HackType.GROW] = serverResources.availableScriptCapacity(ns.getScriptRam(HackType.GROW));
+    availableCapacities[HackType.WEAKEN] = serverResources.availableScriptCapacity(ns.getScriptRam(HackType.WEAKEN));
+
+    const bestServerOptions: BestServerOption[] = [];
+    const hackableServers: ServerStats[] = Object.values(serverStatsReport).filter(s => s.money.available > 0);
+    for (var server of hackableServers) {
+        const bestServerOption: BestServerOption = determineBestOperationForServer(server, availableCapacities, ns.getPlayer())
+        if (bestServerOption != null) {
+            bestServerOptions.push(bestServerOption);
+        }
+    }
+    //order by dollar rate, descending
+    bestServerOptions.sort((a, b) => b.dollarRate - a.dollarRate);
+    for (var bestServerOption of bestServerOptions) {
+        const scriptRam = ns.getScriptRam(bestServerOption.hackType);
+        const availableCapacity = serverResources.availableScriptCapacity(scriptRam);
+        if (availableCapacity > 0 && availableCapacity >= bestServerOption.minRequiredThreads) {
+            const serverStats = serverStatsReport[bestServerOption.server];
+            const threads = Math.min(availableCapacity, bestServerOption.maxPossibleThreads);
+            ns.print(`Running ${bestServerOption.hackType} against server ${serverStats.name} with ${threads} threads for $ rate ${bestServerOption.dollarRate}`)
+            serverResources.allocate(bestServerOption.hackType, scriptRam, threads, serverStats.name, serverStats.hack.chance);
+        }
+    }
+
+    return serverResources.decide();
 }

@@ -1,5 +1,22 @@
 import { assert } from "chai";
-import { ServerResourcesReport, ServerResources, HackType } from "../../../src/scripts/utils/hack"
+import { ServerResourcesReport, ServerResources, ServerStats, HackType, determineMaxThreadsToHackWith } from "scripts/utils/hack"
+import { Player } from "index";
+
+describe('determineMaxThreadsToHackWith', () => {
+    it('We should not over-hack a server', () => {
+        const server: ServerStats = <ServerStats>{
+            hack: {
+                percentStolenPerThread: .01
+            },
+            money: {
+                available: 100
+            }
+        }
+        assert.equal(determineMaxThreadsToHackWith(server, 10), 10)
+        assert.equal(determineMaxThreadsToHackWith(server, 100), 99)
+        assert.equal(determineMaxThreadsToHackWith(server, 1000), 99)
+    })
+});
 
 describe('ServerResourcesReport tests', () => {
     it('available capacity uses correct math', () => {

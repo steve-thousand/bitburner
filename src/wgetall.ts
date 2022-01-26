@@ -21,6 +21,7 @@ export async function main(ns: NS) {
         "scripts/main.js",
         "scripts/worker-grow.js",
         "scripts/worker-hack.js",
+        "scripts/worker-weaken.js",
         "scripts/utils/bitburner-formulas.js",
         "scripts/utils/format.js",
         "scripts/utils/hack.js",

@@ -8,6 +8,23 @@ export class Server {
         return 1 + (weight * Math.pow(intelligence, 0.8)) / 600;
     }
 
+    static calculateHackingChance(hackDifficulty: number, requiredHackingSkill: number, player: Player): number {
+        const hackFactor = 1.75;
+        const difficultyMult = (100 - hackDifficulty) / 100;
+        const skillMult = hackFactor * player.hacking;
+        const skillChance = (skillMult - requiredHackingSkill) / skillMult;
+        const chance =
+            skillChance * difficultyMult * player.hacking_chance_mult * Server.calculateIntelligenceBonus(player.intelligence, 1);
+        if (chance > 1) {
+            return 1;
+        }
+        if (chance < 0) {
+            return 0;
+        }
+
+        return chance;
+    }
+
     static calculatePercentMoneyHacked(hackDifficulty: number, requiredHackingSkill: number, player: Player): number {
         // Adjust if needed for balancing. This is the divisor for the final calculation
         const balanceFactor = 240;
@@ -49,6 +66,7 @@ export class Server {
             (hackTimeMultiplier * skillFactor) /
             (player.hacking_speed_mult * Server.calculateIntelligenceBonus(player.intelligence, 1));
 
-        return hackingTime;
+        //source code returns this in seconds, we do milliseconds
+        return hackingTime * 1000;
     }
 }

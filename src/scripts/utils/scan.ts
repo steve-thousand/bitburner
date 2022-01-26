@@ -81,7 +81,6 @@ export async function getServerStatsReport(ns: NS, servers: string | string[]): 
     }
 
     for (var server of servers) {
-
         const hackChance = ns.hackAnalyzeChance(server);
         const hackTime = ns.getHackTime(server);
         const requiredHackingLevel = ns.getServerRequiredHackingLevel(server);
