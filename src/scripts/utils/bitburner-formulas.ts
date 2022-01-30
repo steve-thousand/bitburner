@@ -1,6 +1,7 @@
 import { Player } from "index";
 
-export const ServerFortifyAmount = 0.002
+const ServerBaseGrowthRate = 1.03;
+const ServerMaxGrowthRate = 1.003;
 
 export class Server {
 
@@ -68,5 +69,25 @@ export class Server {
 
         //source code returns this in seconds, we do milliseconds
         return hackingTime * 1000;
+    }
+
+    static calculateServerGrowth(hackDifficulty: number, serverGrowth: number, threads: number, p: Player, cores = 1): number {
+        const numServerGrowthCycles = Math.max(Math.floor(threads), 0);
+
+        //Get adjusted growth rate, which accounts for server security
+        const growthRate = ServerBaseGrowthRate;
+        let adjGrowthRate = 1 + (growthRate - 1) / hackDifficulty;
+        if (adjGrowthRate > ServerMaxGrowthRate) {
+            adjGrowthRate = ServerMaxGrowthRate;
+        }
+
+        //Calculate adjusted server growth rate based on parameters
+        const serverGrowthPercentage = serverGrowth / 100;
+        const numServerGrowthCyclesAdjusted =
+            numServerGrowthCycles * serverGrowthPercentage // * BitNodeMultipliers.ServerGrowthRate; //TODO
+
+        //Apply serverGrowth for the calculated number of growth cycles
+        const coreBonus = 1 + (cores - 1) / 16;
+        return Math.pow(adjGrowthRate, numServerGrowthCyclesAdjusted * p.hacking_grow_mult * coreBonus);
     }
 }

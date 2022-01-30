@@ -1,8 +1,7 @@
 import { NS, Player } from "index";
 import { ServerStatsReport, ServerStats } from "scripts/utils/scan";
 export { ServerStats };
-import { Server, ServerFortifyAmount } from "scripts/utils/bitburner-formulas"
-import { formatDollars } from "scripts/utils/format"
+import { Server } from "scripts/utils/bitburner-formulas"
 
 export function canFTP(host: string, ns: NS) {
     return ns.fileExists("FTPCrack.exe", host)
@@ -151,18 +150,35 @@ function determineBestOperationForServer(server: ServerStats, maxCapacities: { [
     const growMoneyTippingPoint = server.money.available * (server.hack.timeMs + server.grow.timeMs) / server.hack.timeMs;
     if (growMoneyTippingPoint < server.money.max) {
         //we might be able grow!
-        const minRequiredGrowThreads = Math.ceil(growMoneyTippingPoint / (server.money.available * server.grow.rate));
-        //TODO this is wrong
-        var growHackRate = Math.min(server.money.available * 0.0002 * minRequiredGrowThreads, server.money.max) * server.hack.percentStolenPerThread * Math.pow(server.hack.chance, 1) / (server.grow.timeMs + server.hack.timeMs)
-        // var growHackRate = Math.min(server.money.available * server.grow.rate * minRequiredGrowThreads, server.money.max) * server.hack.percentStolenPerThread / (server.grow.timeMs + server.hack.timeMs)
-        if (!topRate || growHackRate > topRate) {
-            //yay! we can grow
-            topAction = HackType.GROW;
-            topRate = growHackRate
-            minRequiredThreads = minRequiredGrowThreads;
-            //max threads is the point at which we will have reached the max
-            maxPossibleThreads = Math.ceil(server.money.max / (server.money.available * 0.0002));
-            // maxPossibleThreads = Math.ceil(server.money.max / (server.money.available * server.grow.rate));
+        var growThreads = 1;
+        //TODO constant time.
+        const maxGrowCapacity = maxCapacities[HackType.GROW]
+        while (growThreads < maxGrowCapacity) {
+            const growthPercentage = Server.calculateServerGrowth(server.security.level, server.grow.rate, growThreads, player);
+            const newMoney = server.money.available * growthPercentage;
+            if (newMoney >= growMoneyTippingPoint) {
+                //yay! we can grow
+                var growHackRate = Math.min(server.money.available * growthPercentage * growThreads, server.money.max) * server.hack.percentStolenPerThread * Math.pow(server.hack.chance, 1) / (server.grow.timeMs + server.hack.timeMs)
+
+                //awful but let's find the max the same way
+                var maxGrowThreads = growThreads;
+                while (maxGrowThreads < maxGrowCapacity) {
+                    const growthPercentage = Server.calculateServerGrowth(server.security.level, server.grow.rate, maxGrowThreads, player);
+                    if (server.money.available * growthPercentage > server.money.max) {
+                        break;
+                    }
+                    maxGrowThreads++;
+                }
+
+                topAction = HackType.GROW;
+                //TODO the rate here is not constant, i don't think. uh oh!
+                topRate = growHackRate
+                minRequiredThreads = growThreads;
+                //max threads is the point at which we will have reached the max
+                maxPossibleThreads = Math.ceil(server.money.max / (server.money.available * 0.0002));
+                // maxPossibleThreads = Math.ceil(server.money.max / (server.money.available * server.grow.rate));
+            }
+            growThreads++;
         }
     }
 

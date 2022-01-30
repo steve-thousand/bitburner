@@ -1,6 +1,6 @@
 import { NS } from "index";
 import { findServers, getServerStatsReport } from "scripts/utils/scan";
-import { canFTP, canSMTP, canSSH, decideToHack, HackDecision } from "scripts/utils/hack";
+import { canFTP, canSMTP, canSSH, decideToHack, HackDecision, HackType } from "scripts/utils/hack";
 
 /** 
  * Crawl to a depth for servers that we do not own but could own, and attempt to take control.
@@ -98,7 +98,11 @@ async function manageWorkers(ns: NS) {
     for (var hackDecision of hackDecisions) {
         const decisionId = uuid();
         var threadCount = hackDecision.threadCount;
-        var partitionFraction = 1 / (hackDecision.chance * hackDecision.chance)
+        if (hackDecision.type === HackType.HACK) {
+            var partitionFraction = 1 / (hackDecision.chance * hackDecision.chance)
+        } else {
+            partitionFraction = 1;
+        }
         var threadsPerProcess = Math.floor(hackDecision.threadCount / partitionFraction);
         if (threadsPerProcess == 0) {
             threadsPerProcess = threadCount;
